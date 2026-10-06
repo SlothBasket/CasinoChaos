@@ -1,0 +1,17 @@
+# Reference-only game source and third-party binaries
+GameReference/
+**/GameReference/
+*.dll
+*.pdb
+*.exe
+*.bank
+*.assets
+
+# Local builds and editor files
+**/bin/
+**/obj/
+.vs/
+.idea/
+*.user
+*.suo
+Directory.Build.local.props
