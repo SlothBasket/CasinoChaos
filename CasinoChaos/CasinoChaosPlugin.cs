@@ -1,0 +1,161 @@
+using System;
+using System.Collections.Generic;
+using BepInEx;
+using Extensions;
+using GWYF_ModAPI;
+using HarmonyLib;
+using Mirror;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+#if DEBUG
+using UnityEngine.InputSystem;
+#endif
+
+namespace GWYF_CasinoChaos
+{
+    [BepInPlugin("com.gwyf.casinochaos", "CasinoChaos", "1.0.0")]
+    public class CasinoChaosPlugin : BaseUnityPlugin, IMod
+    {
+        string IMod.Name => "CasinoChaos";
+        string IMod.Version => "1.0.0";
+        string IMod.Author => "YourName";
+        string IMod.Description => "Civilian bat hits add $5 and offender heat; heat 3 attracts one mafia goon.";
+
+        private static Harmony _harmony;
+        private static Action<string> _log;
+        private static int _lastTickFrame = -1;
+        internal static void Log(string message) => _log?.Invoke(message);
+
+        private void Awake()
+        {
+            _log = message => Logger.LogInfo(message);
+            InstallPatch();
+        }
+
+        public void OnLoad(IModContext ctx)
+        {
+            _log = ctx.Log;
+            InstallPatch();
+        }
+
+        private static void InstallPatch()
+        {
+            if (_harmony != null)
+                return;
+
+            _harmony = new Harmony("com.gwyf.casinochaos");
+            _harmony.PatchAll(typeof(CasinoChaosPlugin).Assembly);
+            SceneManager.activeSceneChanged += SceneChanged;
+            Log("CasinoChaos loaded: $5 civilian reward, per-player heat, one bat goon at heat 3.");
+#if DEBUG
+            Log("DEVELOPMENT ONLY: F9 sets the local host player's heat to 3.");
+#endif
+        }
+
+        public void OnUnload()
+        {
+            _harmony?.UnpatchSelf();
+            _harmony = null;
+            SceneManager.activeSceneChanged -= SceneChanged;
+            HeatSystem.Clear("mod unload");
+            MafiaGuardController.DespawnAll("mod unload");
+            CivilianBatReward.Clear();
+            _log = null;
+        }
+
+        private void OnDestroy() => OnUnload();
+        private void Update() => Tick();
+        public void OnUpdate() => Tick();
+        public void OnGUI() { }
+        public void OnFixedUpdate() { }
+        public void OnSceneChanged(string sceneName) { }
+        private static void SceneChanged(Scene oldScene, Scene newScene)
+        {
+            HeatSystem.Clear("scene changed to " + newScene.name);
+            CivilianBatReward.Clear();
+        }
+
+        private static void Tick()
+        {
+            // The manager and BepInEx may both invoke this in the same frame.
+            if (_lastTickFrame == Time.frameCount) return;
+            _lastTickFrame = Time.frameCount;
+            if (!NetworkServer.active)
+            {
+                HeatSystem.Clear("server stopped");
+                CivilianBatReward.Clear();
+                return;
+            }
+#if DEBUG
+            if (Keyboard.current != null && Keyboard.current.f9Key.wasPressedThisFrame && NetworkClient.localPlayer)
+            {
+                var player = NetworkClient.localPlayer.GetComponent<PlayerController>();
+                if (player) HeatSystem.SetDevelopmentHeat(player, 3);
+            }
+#endif
+            HeatSystem.Tick();
+        }
+
+        [HarmonyPatch(typeof(Bat), "UserCode_CmdHitNpc__NPC__Single", new Type[] { typeof(NPC), typeof(float) })]
+        private static class CivilianBatReward
+        {
+            // Bat enables its hit collider for 0.15 seconds; OnTriggerEnter can
+            // repeat within that window. Separate vanilla swings are >=0.5s apart.
+            private const float HitWindow = 0.15f;
+            private static readonly Dictionary<(uint Bat, uint Npc), float> LastReward =
+                new Dictionary<(uint Bat, uint Npc), float>();
+
+            // This list is populated by the vanilla floor/crowd spawner, unlike
+            // Mod API NPC handles. It identifies the existing casino civilians.
+            private static readonly AccessTools.FieldRef<NPCSpawner, SyncList<NPC>> SpawnedCivilians =
+                AccessTools.FieldRefAccess<NPCSpawner, SyncList<NPC>>("NPCs");
+
+            internal static void Clear() => LastReward.Clear();
+
+            private static void Postfix(Bat __instance, NPC npc)
+            {
+                if (!NetworkServer.active || !npc)
+                    return;
+
+                var attacker = __instance.NetworkHolder;
+                if (!attacker)
+                    return;
+                var offender = attacker.GetComponent<PlayerController>();
+                if (!offender) return;
+
+                var spawner = NetworkSingleton<NPCSpawner>.Instance;
+                if (!spawner || !SpawnedCivilians(spawner).Contains(npc))
+                    return;
+
+                // The original command has returned. ServerKnockback only accepts
+                // an NPC with its Rigidbody, and sets its state to Ragdoll.
+                if (!npc.GetComponent<Rigidbody>() || npc.State != NPC.NPCState.Ragdoll)
+                    return;
+
+                var key = (__instance.netId, npc.netId);
+                float now = Time.time;
+                if (LastReward.TryGetValue(key, out float last) && now - last < HitWindow)
+                    return;
+
+                try
+                {
+                    var money = NetworkSingleton<MoneyManager>.Instance;
+                    var profile = attacker.GetComponent<PlayerProfile>();
+                    BigNumber before = money.balance;
+                    LastReward[key] = now;
+                    bool rewarded = money.TryChangeBalance(5, profile, ChangeType.Misc);
+                    HeatSystem.AddCivilianHit(offender);
+
+                    _log?.Invoke($"Civilian bat hit detected: npc='{npc.name}' netId={npc.netId}; " +
+                        $"attacker='{(profile ? profile.playerName : attacker.name)}' netId={attacker.netId}; " +
+                        $"server={NetworkServer.active} host={NetworkServer.active && NetworkClient.active}; " +
+                        $"shared balance before={before.ToSaveString()} after={money.balance.ToSaveString()}; reward=$5 applied={rewarded}");
+                }
+                catch (Exception error)
+                {
+                    _log?.Invoke($"Civilian bat reward failed after vanilla knockback: {error}");
+                }
+            }
+        }
+    }
+}
