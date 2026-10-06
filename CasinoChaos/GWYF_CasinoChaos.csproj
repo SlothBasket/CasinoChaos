@@ -8,6 +8,9 @@
 
   <!-- Game + BepInEx references (resolved via Directory.Build.props) -->
   <ItemGroup>
+    <Reference Include="FMODUnity"><HintPath>$(ManagedDir)\FMODUnity.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DissonanceFMOD_Playback"><HintPath>$(ManagedDir)\DissonanceFMOD_Playback.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DissonanceVoip"><HintPath>$(ManagedDir)\DissonanceVoip.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>False</Private></Reference>
@@ -37,6 +40,7 @@
     <Message Importance="high" Text="Deployed $(TargetFileName) > $(ModsDir)" />
   </Target>
 </Project>
+
 
 
 

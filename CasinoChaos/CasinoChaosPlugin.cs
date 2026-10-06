@@ -13,11 +13,11 @@ using UnityEngine.InputSystem;
 
 namespace GWYF_CasinoChaos
 {
-    [BepInPlugin("com.gwyf.casinochaos", "CasinoChaos", "1.0.0")]
+    [BepInPlugin("com.gwyf.casinochaos", "CasinoChaos", "1.1.0")]
     public class CasinoChaosPlugin : BaseUnityPlugin, IMod
     {
         string IMod.Name => "CasinoChaos";
-        string IMod.Version => "1.0.0";
+        string IMod.Version => "1.1.0";
         string IMod.Author => "YourName";
         string IMod.Description => "Civilian bat hits add $5 and offender heat; heat 3 attracts one mafia goon.";
 
@@ -43,6 +43,8 @@ namespace GWYF_CasinoChaos
             if (_harmony != null)
                 return;
 
+            BodyPartNetwork.Install();
+            BodyPartEffects.Install();
             _harmony = new Harmony("com.gwyf.casinochaos");
             _harmony.PatchAll(typeof(CasinoChaosPlugin).Assembly);
             SceneManager.activeSceneChanged += SceneChanged;
@@ -57,6 +59,8 @@ namespace GWYF_CasinoChaos
             _harmony?.UnpatchSelf();
             _harmony = null;
             SceneManager.activeSceneChanged -= SceneChanged;
+            BodyPartEffects.Shutdown();
+            BodyPartNetwork.Shutdown();
             HeatSystem.Clear("mod unload");
             MafiaGuardController.DespawnAll("mod unload");
             CivilianBatReward.Clear();
@@ -80,6 +84,8 @@ namespace GWYF_CasinoChaos
             // The manager and BepInEx may both invoke this in the same frame.
             if (_lastTickFrame == Time.frameCount) return;
             _lastTickFrame = Time.frameCount;
+            BodyPartNetwork.Tick();
+            BodyPartEffects.Tick();
             if (!NetworkServer.active)
             {
                 HeatSystem.Clear("server stopped");
@@ -159,3 +165,4 @@ namespace GWYF_CasinoChaos
         }
     }
 }
+
