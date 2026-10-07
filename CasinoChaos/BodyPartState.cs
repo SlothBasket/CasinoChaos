@@ -3,15 +3,16 @@ using System.Collections.Generic;
 
 namespace GWYF_CasinoChaos
 {
-    internal enum CustomBodyPart : byte { LeftEar, RightEar }
+    internal enum CustomBodyPart : byte { LeftEar, RightEar, LeftLeg, RightLeg, Dong, Butt }
 
     internal readonly struct BodyState
     {
+        internal const byte CompleteMask = 63;
         internal readonly byte PresentMask;
         internal readonly uint Revision;
         internal BodyState(byte mask, uint revision) { PresentMask = mask; Revision = revision; }
         internal bool Has(CustomBodyPart part) => (PresentMask & (1 << (int)part)) != 0;
-        internal static BodyState Complete => new BodyState(3, 0);
+        internal static BodyState Complete => new BodyState(CompleteMask, 0);
     }
 
     // Transport-independent client view. Audio observes this view; it never
@@ -23,7 +24,7 @@ namespace GWYF_CasinoChaos
         internal static BodyState Get(ulong steamId) => States.TryGetValue(steamId, out var state) ? state : BodyState.Complete;
         internal static bool Receive(ulong steamId, byte mask, uint revision)
         {
-            if (steamId == 0 || (mask & ~3) != 0 || revision == 0) return false;
+            if (steamId == 0 || (mask & ~BodyState.CompleteMask) != 0 || revision == 0) return false;
             bool exists = States.TryGetValue(steamId, out var before);
             if (exists && revision <= before.Revision) return false;
             if (!exists) before = BodyState.Complete;

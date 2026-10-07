@@ -13,13 +13,13 @@ using UnityEngine.InputSystem;
 
 namespace GWYF_CasinoChaos
 {
-    [BepInPlugin("com.gwyf.casinochaos", "CasinoChaos", "1.1.0")]
+    [BepInPlugin("com.gwyf.casinochaos", "CasinoChaos", "1.6.3")]
     public class CasinoChaosPlugin : BaseUnityPlugin, IMod
     {
         string IMod.Name => "CasinoChaos";
-        string IMod.Version => "1.1.0";
+        string IMod.Version => "1.6.3";
         string IMod.Author => "YourName";
-        string IMod.Description => "Civilian bat hits add $5 and offender heat; heat 3 attracts one mafia goon.";
+        string IMod.Description => "Civilian bat hits add $5 and shared heat; escalating mafia responses and body economy.";
 
         private static Harmony _harmony;
         private static Action<string> _log;
@@ -28,12 +28,16 @@ namespace GWYF_CasinoChaos
 
         private void Awake()
         {
+            AccessibilitySettings.Bind(Config);
+            HeatSettings.Bind(Config);
             _log = message => Logger.LogInfo(message);
             InstallPatch();
         }
 
         public void OnLoad(IModContext ctx)
         {
+            AccessibilitySettings.Bind(Config);
+            HeatSettings.Bind(Config);
             _log = ctx.Log;
             InstallPatch();
         }
@@ -44,13 +48,19 @@ namespace GWYF_CasinoChaos
                 return;
 
             BodyPartNetwork.Install();
+            DongAppearanceNetwork.Install(); FartNetwork.Install();
+            DongVisuals.Install();
+            HeatNetwork.Install();
+            EarMachineNetwork.Install();
             BodyPartEffects.Install();
+            StaticEyeOverlay.Install();
+            LegMovement.Install();
             _harmony = new Harmony("com.gwyf.casinochaos");
             _harmony.PatchAll(typeof(CasinoChaosPlugin).Assembly);
             SceneManager.activeSceneChanged += SceneChanged;
-            Log("CasinoChaos loaded: $5 civilian reward, per-player heat, one bat goon at heat 3.");
+            Log("CasinoChaos loaded: $5 civilian reward; global heat tiers 0-5 with 0/1/2/3/5/7 gun guards.");
 #if DEBUG
-            Log("DEVELOPMENT ONLY: F9 sets the local host player's heat to 3.");
+            Log("DEVELOPMENT ONLY, host: Ctrl+Shift+Insert adds one global heat point; Ctrl+Shift+Delete resets global heat and removes guards.");
 #endif
         }
 
@@ -59,10 +69,15 @@ namespace GWYF_CasinoChaos
             _harmony?.UnpatchSelf();
             _harmony = null;
             SceneManager.activeSceneChanged -= SceneChanged;
+            DongAppearanceNetwork.Shutdown(); FartNetwork.Shutdown();
+            DongVisuals.Shutdown();
+            EarMachineNetwork.Shutdown();
             BodyPartEffects.Shutdown();
-            BodyPartNetwork.Shutdown();
+            StaticEyeOverlay.Shutdown();
+            LegMovement.Shutdown();
             HeatSystem.Clear("mod unload");
-            MafiaGuardController.DespawnAll("mod unload");
+            HeatNetwork.Shutdown();
+            BodyPartNetwork.Shutdown();
             CivilianBatReward.Clear();
             _log = null;
         }
@@ -75,6 +90,9 @@ namespace GWYF_CasinoChaos
         public void OnSceneChanged(string sceneName) { }
         private static void SceneChanged(Scene oldScene, Scene newScene)
         {
+            DongShuffleButton.Shutdown(); FartButton.Shutdown();
+            DongVisuals.Clear();
+            LegMovement.Clear();
             HeatSystem.Clear("scene changed to " + newScene.name);
             CivilianBatReward.Clear();
         }
@@ -85,21 +103,30 @@ namespace GWYF_CasinoChaos
             if (_lastTickFrame == Time.frameCount) return;
             _lastTickFrame = Time.frameCount;
             BodyPartNetwork.Tick();
+            DongAppearanceNetwork.Tick(); FartNetwork.Tick();
+            DongVisuals.Tick();
+            EarMachineNetwork.Tick();
+            HeatNetwork.Tick();
+            HeatSystem.Tick();
+            HeatHud.Tick();
+            AccessibilitySettings.Refresh();
             BodyPartEffects.Tick();
+            StaticEyeOverlay.Tick();
             if (!NetworkServer.active)
             {
-                HeatSystem.Clear("server stopped");
                 CivilianBatReward.Clear();
                 return;
             }
 #if DEBUG
-            if (Keyboard.current != null && Keyboard.current.f9Key.wasPressedThisFrame && NetworkClient.localPlayer)
+            var k = Keyboard.current;
+            bool chord = k != null && (k.leftCtrlKey.isPressed || k.rightCtrlKey.isPressed) && (k.leftShiftKey.isPressed || k.rightShiftKey.isPressed);
+            if (chord && k.deleteKey.wasPressedThisFrame) HeatSystem.Clear("DEVELOPMENT reset");
+            else if (chord && k.insertKey.wasPressedThisFrame && NetworkClient.localPlayer)
             {
                 var player = NetworkClient.localPlayer.GetComponent<PlayerController>();
-                if (player) HeatSystem.SetDevelopmentHeat(player, 3);
+                if (player) HeatSystem.AddPoint(player, "DEVELOPMENT heat point");
             }
 #endif
-            HeatSystem.Tick();
         }
 
         [HarmonyPatch(typeof(Bat), "UserCode_CmdHitNpc__NPC__Single", new Type[] { typeof(NPC), typeof(float) })]
@@ -165,4 +192,3 @@ namespace GWYF_CasinoChaos
         }
     }
 }
-

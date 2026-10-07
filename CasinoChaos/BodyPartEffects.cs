@@ -34,7 +34,7 @@ namespace GWYF_CasinoChaos
             _installed = true; _refresh = true;
             BodyPartState.Changed += Changed;
         }
-        private static void Changed(ulong id, CustomBodyPart part, bool present) { _refresh = true; _nextTick = 0; }
+        private static void Changed(ulong id, CustomBodyPart part, bool present) { if (part == CustomBodyPart.LeftEar || part == CustomBodyPart.RightEar) { _refresh = true; _nextTick = 0; } }
         internal static void Register(EventInstance instance)
         {
             if (!_installed || !NetworkClient.active || !instance.isValid() || Worlds.ContainsKey(instance.handle)) return;
@@ -136,6 +136,11 @@ namespace GWYF_CasinoChaos
             && !source.name.StartsWith("Menu", StringComparison.OrdinalIgnoreCase)
             && !source.name.StartsWith("System", StringComparison.OrdinalIgnoreCase)
             && (source.name + (source.clip ? source.clip.name : "") + (source.outputAudioMixerGroup ? source.outputAudioMixerGroup.name : "")).IndexOf("music", StringComparison.OrdinalIgnoreCase) < 0;
+        internal static void RegisterUnitySource(AudioSource source)
+        {
+            if(_installed&&_earsActive&&Eligible(source)&&!UnitySources.ContainsKey(source)&&source.GetComponents<AudioSource>().Length==1)
+                UnitySources.Add(source,source.gameObject.AddComponent<UnityHearingModifier>());
+        }
         private static void TickUnity(bool ears, bool left, bool right, float smoothing)
         {
             if (ears && Time.unscaledTime >= _nextSources)
@@ -189,5 +194,3 @@ namespace GWYF_CasinoChaos
     internal static class ReplaceVanillaMouthFilter
     { private static void Prefix(ref int i) { if (BodyPartEffects.Installed) i = 0; } }
 }
-
-

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><GameManaged>C:\Program Files (x86)\Steam\steamapps\common\Gamble With Your Friends\Gamble With Your Friends_Data\Managed</GameManaged></PropertyGroup>
+ <ItemGroup>
+  <Reference Include="FMODUnity"><HintPath>$(GameManaged)\FMODUnity.dll</HintPath></Reference>
+  <Compile Include="../../CasinoChaos/BodyPartState.cs" Link="BodyPartState.cs" />
+  <Compile Include="../../CasinoChaos/FartRules.cs" Link="FartRules.cs" />
+  <Compile Include="../../CasinoChaos/FartClipData.cs" Link="FartClipData.cs" />
+ </ItemGroup>
+</Project>

@@ -15,7 +15,7 @@ namespace GWYF_CasinoChaos
 
     internal static class BodyPartNetwork
     {
-        private const byte Protocol = 1;
+        private const byte Protocol = 3;
         private static readonly Dictionary<ulong, BodyState> ServerStates = new Dictionary<ulong, BodyState>();
         private static bool _wasServer, _installed;
         private static NetworkConnectionToServer _client;
@@ -37,7 +37,7 @@ namespace GWYF_CasinoChaos
             BodyPartState.Changed += LogChange;
             RegisterClientReceiver();
 #if DEBUG
-            CasinoChaosPlugin.Log("DEVELOPMENT ONLY, host: F6 LeftEar, F7 RightEar, F8 Mouth; F10 selects a player (default local host). Clients cannot change ears.");
+            CasinoChaosPlugin.Log("DEVELOPMENT ONLY, host: [ LeftEar, ] RightEar, F8 Mouth; Ctrl+Shift+Home LeftLeg, Ctrl+Shift+End RightLeg; F10 selects a player (default local host). Clients cannot change ears.");
 #endif
         }
         internal static void RegisterClientReceiver()
@@ -52,6 +52,7 @@ namespace GWYF_CasinoChaos
         {
             if (request.Protocol != Protocol) { CasinoChaosPlugin.Log("Body snapshot refused: incompatible protocol."); return; }
             foreach (var entry in ServerStates) conn.Send(Message(entry.Key, entry.Value));
+            EarMachineNetwork.Snapshot(conn);
         }
         private static void Receive(BodyStateMessage message)
         {
@@ -83,7 +84,7 @@ namespace GWYF_CasinoChaos
                     if (!conn.isAuthenticated || !conn.identity) continue;
                     var profile = conn.identity.GetComponent<PlayerProfile>();
                     if (!profile || profile.steamId == 0 || ServerStates.ContainsKey(profile.steamId)) continue;
-                    var state = new BodyState(3, 1);
+                    var state = new BodyState(BodyState.CompleteMask, 1);
                     ServerStates.Add(profile.steamId, state);
                     BodyPartState.Receive(profile.steamId, state.PresentMask, state.Revision);
                     NetworkServer.SendToAll(Message(profile.steamId, state), sendToReadyOnly: true);
@@ -95,7 +96,7 @@ namespace GWYF_CasinoChaos
         internal static bool ServerSet(ulong steamId, CustomBodyPart part, bool present)
         {
             if (!NetworkServer.active || !ServerStates.TryGetValue(steamId, out var before)) return false;
-            if (part != CustomBodyPart.LeftEar && part != CustomBodyPart.RightEar) return false;
+            if ((byte)part > (byte)CustomBodyPart.Butt) return false;
             if (before.Has(part) == present) return true;
             byte mask = present ? (byte)(before.PresentMask | (1 << (int)part)) : (byte)(before.PresentMask & ~(1 << (int)part));
             var state = new BodyState(mask, before.Revision + 1);
@@ -104,14 +105,33 @@ namespace GWYF_CasinoChaos
             NetworkServer.SendToAll(Message(steamId, state), sendToReadyOnly: true);
             return true;
         }
+        internal static bool TryGetServerState(ulong steamId, out BodyState state)
+        {
+            state = BodyState.Complete;
+            return NetworkServer.active && ServerStates.TryGetValue(steamId, out state);
+        }
 #if DEBUG
+        private static bool DevelopmentPressed(KeyCode key)
+        {
+            // Installed PlayerSettings.activeInputHandler=1 (Input System only).
+            // Keep the requested KeyCode binding without invoking legacy Input.
+            var keyboard = Keyboard.current;
+            if (keyboard == null) return false;
+            if (key == KeyCode.LeftBracket) return keyboard.leftBracketKey.wasPressedThisFrame;
+            if (key == KeyCode.RightBracket) return keyboard.rightBracketKey.wasPressedThisFrame;
+            return false;
+        }
         private static void DevelopmentControls()
         {
-            if (!NetworkServer.active || !NetworkClient.localPlayer || Keyboard.current == null) return;
+            if (!NetworkServer.active || !NetworkClient.localPlayer) return;
 
             // No per-frame roster allocation unless a debug key was actually used.
             var k = Keyboard.current;
-            if (!k.f6Key.wasPressedThisFrame && !k.f7Key.wasPressedThisFrame && !k.f8Key.wasPressedThisFrame && !k.f10Key.wasPressedThisFrame) return;
+            bool left = DevelopmentPressed(KeyCode.LeftBracket), right = DevelopmentPressed(KeyCode.RightBracket);
+            bool mouth = k != null && k.f8Key.wasPressedThisFrame, select = k != null && k.f10Key.wasPressedThisFrame;
+            bool chord = k != null && (k.leftCtrlKey.isPressed || k.rightCtrlKey.isPressed) && (k.leftShiftKey.isPressed || k.rightShiftKey.isPressed);
+            bool leftLeg = chord && k.homeKey.wasPressedThisFrame, rightLeg = chord && k.endKey.wasPressedThisFrame;
+            if (!left && !right && !mouth && !select && !leftLeg && !rightLeg) return;
             var players = new List<PlayerProfile>();
             foreach (var conn in NetworkServer.connections.Values)
                 if (conn.identity && conn.identity.TryGetComponent<PlayerProfile>(out var profile) && profile.steamId != 0) players.Add(profile);
@@ -120,13 +140,15 @@ namespace GWYF_CasinoChaos
             if (_debugTarget == 0 && local) _debugTarget = local.steamId;
             int index = players.FindIndex(p => p.steamId == _debugTarget);
             if (players.Count == 0) return;
-            if (k.f10Key.wasPressedThisFrame) index = (index + 1) % players.Count;
+            if (select) index = (index + 1) % players.Count;
             if (index < 0) index = 0;
             var selected = players[index]; _debugTarget = selected.steamId;
             CasinoChaosPlugin.Log($"DEVELOPMENT target: '{selected.playerName}' steamId={_debugTarget}");
-            if (k.f6Key.wasPressedThisFrame) ServerSet(_debugTarget, CustomBodyPart.LeftEar, !BodyPartState.Get(_debugTarget).Has(CustomBodyPart.LeftEar));
-            if (k.f7Key.wasPressedThisFrame) ServerSet(_debugTarget, CustomBodyPart.RightEar, !BodyPartState.Get(_debugTarget).Has(CustomBodyPart.RightEar));
-            if (k.f8Key.wasPressedThisFrame)
+            if (left) ServerSet(_debugTarget, CustomBodyPart.LeftEar, !BodyPartState.Get(_debugTarget).Has(CustomBodyPart.LeftEar));
+            if (right) ServerSet(_debugTarget, CustomBodyPart.RightEar, !BodyPartState.Get(_debugTarget).Has(CustomBodyPart.RightEar));
+            if (leftLeg) ServerSet(_debugTarget, CustomBodyPart.LeftLeg, !BodyPartState.Get(_debugTarget).Has(CustomBodyPart.LeftLeg));
+            if (rightLeg) ServerSet(_debugTarget, CustomBodyPart.RightLeg, !BodyPartState.Get(_debugTarget).Has(CustomBodyPart.RightLeg));
+            if (mouth)
             {
                 var organs = selected.GetComponent<PlayerOrgans>();
                 var manager = NetworkSingleton<OrganManager>.Instance;
@@ -148,7 +170,8 @@ namespace GWYF_CasinoChaos
     }
     [HarmonyLib.HarmonyPatch(typeof(NetworkClient), "Initialize")]
     internal static class BodyClientInitialization
-    { private static void Postfix() => BodyPartNetwork.RegisterClientReceiver(); }
+    {
+        private static void Postfix()
+        { BodyPartNetwork.RegisterClientReceiver(); EarMachineNetwork.RegisterClientReceiver(); LegMovement.RegisterReceiver(); HeatNetwork.RegisterReceiver(); DongAppearanceNetwork.RegisterReceiver(); FartNetwork.RegisterReceiver(); }
+    }
 }
-
-

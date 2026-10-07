@@ -22,5 +22,3 @@ for(int i=0;i<3;i++){Check(group.getDSP(i,out var dsp));Check(dsp.getBypass(out 
 }
 Check(group.getNumDSPs(out int restored));Assert(restored==original,"owned DSPs fully removed");Check(group.getVolume(out var after));Assert(Math.Abs(after-.42)<.0001,"volume preserved after cleanup");
 Check(group.release());Check(core.release());Console.WriteLine("PASS installed FMOD: attachment, gain/lowpass/distortion, neutral bypass, removal, vanilla volume preserved");
-
-

@@ -8,10 +8,14 @@
 
   <!-- Game + BepInEx references (resolved via Directory.Build.props) -->
   <ItemGroup>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(ManagedDir)\UnityEngine.UIModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(ManagedDir)\UnityEngine.UI.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(ManagedDir)\Unity.TextMeshPro.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="FMODUnity"><HintPath>$(ManagedDir)\FMODUnity.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="DissonanceFMOD_Playback"><HintPath>$(ManagedDir)\DissonanceFMOD_Playback.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="DissonanceVoip"><HintPath>$(ManagedDir)\DissonanceVoip.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>False</Private></Reference>
     <Reference Include="UnityEngine.AnimationModule"><HintPath>$(ManagedDir)\UnityEngine.AnimationModule.dll</HintPath><Private>False</Private></Reference>
@@ -29,9 +33,19 @@
     <Reference Include="Assembly-CSharp"><HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath><Private>False</Private></Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime"><HintPath>$(ManagedDir)\Unity.RenderPipelines.Core.Runtime.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime.Shared"><HintPath>$(ManagedDir)\Unity.RenderPipelines.Core.Runtime.Shared.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime"><HintPath>$(ManagedDir)\Unity.RenderPipelines.Universal.Runtime.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="Unity.Collections"><HintPath>$(ManagedDir)\Unity.Collections.dll</HintPath><Private>False</Private></Reference>
+  </ItemGroup>
   <!-- GWYF ModAPI reference (for IMod interface) -->
   <ItemGroup>
     <Reference Include="GWYF_ModAPI"><HintPath>$(BepInExDir)\plugins\GWYF_ModAPI.dll</HintPath><Private>False</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Audio\Farts\*.wav" LogicalName="CasinoChaos.Farts.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Cross-platform auto-deploy on build -->
@@ -40,7 +54,3 @@
     <Message Importance="high" Text="Deployed $(TargetFileName) > $(ModsDir)" />
   </Target>
 </Project>
-
-
-
-

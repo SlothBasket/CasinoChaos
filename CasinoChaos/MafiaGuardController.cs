@@ -18,6 +18,7 @@ namespace GWYF_CasinoChaos
         private readonly MafiaGuardLifecycle _lifecycle = new MafiaGuardLifecycle();
         private GuardState _state => _lifecycle.State;
         internal bool IsDefeated => _lifecycle.IsDefeated;
+        internal bool IsActiveResponse => _initialized && !_despawning && !IsDefeated && isActiveAndEnabled;
         private bool _recoveryBlockedLogged;
         private float _nextDestination, _stateUntil, _nextAttack;
         private Vector3 _swingDirection;

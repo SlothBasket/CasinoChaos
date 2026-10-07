@@ -1,107 +1,99 @@
 using System.Collections.Generic;
 using Extensions;
+using HarmonyLib;
 using Mirror;
 using UnityEngine;
 
 namespace GWYF_CasinoChaos
 {
-    // netId is scoped to the current server scene. Scene changes, disconnects,
-    // server stop and unload discard records, so a new identity cannot inherit heat.
     internal static class HeatSystem
     {
-        private sealed class Record
+        internal static int HeatPoints { get; private set; }
+        internal static int HeatLevel => HeatRules.Level(HeatPoints);
+        internal static PlayerController RecentOffender { get; private set; }
+        // Disconnects do not erase global heat. Round reset clears attribution.
+        internal sealed class Contribution
         {
             internal PlayerController Offender;
-            internal int Heat;
-            internal bool Responded;
-            internal MafiaGuardController Guard;
-            internal float NextSpawnAttempt;
+            internal PlayerProfile Profile;
+            internal ulong SteamId;
+            internal string Name;
+            internal int Hits;
         }
-
-        private static readonly Dictionary<uint, Record> Records = new Dictionary<uint, Record>();
-        private static readonly List<uint> Invalid = new List<uint>();
-        private static readonly HeatResponseTier FirstResponse = new HeatResponseTier(3, 1);
+        internal static readonly Dictionary<uint, Contribution> Contributions = new Dictionary<uint, Contribution>();
+        private static readonly List<MafiaGuardController> Guards = new List<MafiaGuardController>();
+        private static bool _wasServer, _wasCasino;
 
         internal static string Identity(PlayerController player)
         {
+            if (!player) return "unavailable";
             var profile = player.GetComponent<PlayerProfile>();
             return $"'{(profile ? profile.playerName : player.name)}' netId={player.netId} steamId={(profile ? profile.steamId : 0)}";
         }
-
-        private static Record Get(PlayerController player)
+        internal static void AddCivilianHit(PlayerController player) => AddPoint(player, "Civilian hit");
+        internal static void AddPoint(PlayerController player, string reason)
         {
-            if (!Records.TryGetValue(player.netId, out var record))
-                Records[player.netId] = record = new Record { Offender = player };
-            return record;
+            var game = NetworkSingleton<GameManager>.Instance;
+            if (!NetworkServer.active || !player || !game || game.state != GameState.Game) return;
+            int before = HeatPoints, oldLevel = HeatLevel;
+            if (HeatPoints < int.MaxValue) HeatPoints++;
+            RecentOffender = player;
+            if (!Contributions.TryGetValue(player.netId, out var contribution))
+            {
+                var profile = player.GetComponent<PlayerProfile>();
+                Contributions[player.netId] = contribution = new Contribution {
+                    Offender = player, Profile = profile, SteamId = profile ? profile.steamId : 0,
+                    Name = profile ? profile.playerName : player.name
+                };
+            }
+            if (contribution.Hits < int.MaxValue) contribution.Hits++;
+            Guards.RemoveAll(g => !g);
+            int active = 0;
+            foreach (var guard in Guards) if (guard.IsActiveResponse) active++;
+            int requested = HeatRules.Reinforcements(oldLevel, HeatLevel, active), spawned = 0;
+            // One bounded wave per tier transition. Defeats/disconnects never
+            // schedule replacements. Failed spawns wait until the NEXT tier.
+            for (int i = 0; i < requested; i++)
+            {
+                var guard = MafiaGuardSpawner.Spawn(RecentOffender, MafiaWeaponType.Gun);
+                if (!guard) break;
+                Guards.Add(guard); spawned++;
+            }
+            CasinoChaosPlugin.Log($"{reason}: offender={Identity(player)}; GlobalHeatPoints {before}->{HeatPoints}; " +
+                $"HeatLevel {oldLevel}->{HeatLevel}; desired gun guards={HeatRules.Tiers[HeatLevel].DesiredGunGuards}; " +
+                $"reinforcements spawned={spawned}/{requested}; active={active + spawned}");
+            HeatNetwork.Publish();
         }
-
-        internal static void AddCivilianHit(PlayerController player)
-        {
-            if (!NetworkServer.active) return;
-            var record = Get(player);
-            int before = record.Heat;
-            record.Heat++;
-            CasinoChaosPlugin.Log($"Civilian hit: offender={Identity(player)} heat={before}->{record.Heat}");
-            TryRespond(record);
-        }
-
-        internal static void SetDevelopmentHeat(PlayerController player, int value)
-        {
-            if (!NetworkServer.active) return;
-            var record = Get(player);
-            int before = record.Heat;
-            record.Heat = value;
-            CasinoChaosPlugin.Log($"DEVELOPMENT ONLY: offender={Identity(player)} heat={before}->{value}");
-            TryRespond(record);
-        }
-
-        private static void TryRespond(Record record)
-        {
-            if (record.Responded || record.Heat < FirstResponse.MinimumHeat || Time.time < record.NextSpawnAttempt)
-                return;
-            if (!NetworkSingleton<GameManager>.Instance || NetworkSingleton<GameManager>.Instance.state != GameState.Game)
-                return;
-            record.NextSpawnAttempt = Time.time + 3f;
-            record.Guard = MafiaGuardSpawner.Spawn(record.Offender);
-            if (record.Guard) record.Responded = true;
-        }
-
         internal static void Tick()
         {
-            Invalid.Clear();
-            foreach (var pair in Records)
-            {
-                var record = pair.Value;
-                if (!record.Offender || record.Offender.connectionToClient == null ||
-                    !NetworkServer.spawned.ContainsKey(pair.Key))
-                {
-                    // A defeated corpse owns its timer independently of heat.
-                    if (record.Guard && !record.Guard.IsDefeated) record.Guard.Despawn("offender disconnected");
-                    Invalid.Add(pair.Key);
-                }
-                else TryRespond(record);
-            }
-            foreach (uint key in Invalid) Records.Remove(key);
+            var game = NetworkSingleton<GameManager>.Instance;
+            bool casino = NetworkServer.active && game && game.state == GameState.Game;
+            if ((_wasServer && !NetworkServer.active) || (_wasCasino && !casino))
+                Clear(NetworkServer.active ? "left casino game state" : "server stopped");
+            _wasServer = NetworkServer.active; _wasCasino = casino;
         }
-
         internal static void Clear(string reason)
         {
-            foreach (var record in Records.Values)
-                if (record.Guard) record.Guard.Despawn(reason);
-            Records.Clear();
+            int points = HeatPoints, removed = 0;
+            // Includes defeated corpses and guards removed from bookkeeping.
+            foreach (var guard in Object.FindObjectsByType<MafiaGuardController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            { guard.Despawn(reason); removed++; }
+            HeatPoints = 0; RecentOffender = null; Contributions.Clear(); Guards.Clear();
+            if (points != 0 || removed != 0)
+                CasinoChaosPlugin.Log($"Heat reset: {reason}; GlobalHeatPoints {points}->0; HeatLevel {HeatRules.Level(points)}->0; previous-round guards removed={removed}");
+            if (NetworkServer.active) { HeatSettings.ApplyForRound(); HeatNetwork.Publish(); }
         }
     }
-
-    // Only the first response exists. These fields leave room for future tiers,
-    // without spawning gunmen or enabling any special weapon behavior.
-    internal sealed class HeatResponseTier
+    [HarmonyPatch(typeof(GameManager), nameof(GameManager.InitializeScene))]
+    internal static class HeatSceneInitialization
     {
-        internal readonly int MinimumHeat;
-        internal readonly int BatGuardCount;
-        internal readonly int GunGuardCount = 0;
-        internal readonly float GunAccuracy = 0f;
-        internal readonly bool SpecialWeaponBehavior = false;
-        internal HeatResponseTier(int minimumHeat, int batGuardCount)
-        { MinimumHeat = minimumHeat; BatGuardCount = batGuardCount; }
+        private static void Prefix(string sceneName)
+        { if (NetworkServer.active) HeatSystem.Clear("GameManager.InitializeScene: " + sceneName); }
+    }
+    [HarmonyPatch(typeof(GameManager), "ServerRetrySameDay")]
+    internal static class HeatDayRetry
+    {
+        private static void Prefix()
+        { if (NetworkServer.active) HeatSystem.Clear("GameManager.ServerRetrySameDay"); }
     }
 }
